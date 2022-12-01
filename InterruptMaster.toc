@@ -1,0 +1,10 @@
+## Title: Interrupt Master
+## Version: 1.0
+## Author: Eskiso
+## Interface: 100002
+## Notes: Keep track of interrupts
+## SavedVariables: interrupt_master
+## SavedVariablesPerCharacter: interrupt_master_pc
+
+libs\LibCandyBar-3.0\LibCandyBar-3.0\LibCandyBar-3.0.lua
+InterruptMaster.lua
