@@ -210,13 +210,15 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
             local link,  _ = GetSpellLink(extraSpellID)
             print("Interrupted",link, "successfully!")
         end
+        local alreadyChatted = false
         if interrupt_master_pc.db.onInstanceChat then
             inInstance, _ = IsInInstance()
             if inInstance then
+                alreadyChatted = true
                 SendChatMessage("Interrupted " .. GetSpellLink(extraSpellID) .. " successfully!", "INSTANCE_CHAT", DEFAULT_CHAT_FRAME.editBox.languageID);
             end
         end
-        if interrupt_master_pc.db.onParty then
+        if interrupt_master_pc.db.onParty and alreadyChatted == false then
             SendChatMessage("Interrupted " .. GetSpellLink(extraSpellID) .. " successfully!", "PARTY", DEFAULT_CHAT_FRAME.editBox.languageID);
         end
     end
@@ -430,7 +432,7 @@ local function handler(msg)
         print("|cFFFFFF00Interrupt Master: |cFF00FF00Announce on /party chat: |cffff0000Disabled")
 
     elseif msg == "instance" then
-        if interrupt_master_pc.db.onChat then
+        if interrupt_master_pc.db.onInstanceChat then
             print("|cFFFFFF00Interrupt Master: Announce On /instance Chat: |cFF00FF00is active")
         else
             print("|cFFFFFF00Interrupt Master: Announce On /instance Chat: |cffff0000is disabled")
@@ -450,10 +452,10 @@ local function handler(msg)
         end
     elseif msg == "chat on" then
         interrupt_master_pc.db.onChat = true
-        print("|cFFFFFF00Interrupt Master: |cFF00FF00Show on Chat: |cFF00FF00Enabled")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00Show on private chat: |cFF00FF00Enabled")
     elseif msg == "chat off" then
         interrupt_master_pc.db.onChat = false
-        print("|cFFFFFF00Interrupt Master: |cFF00FF00Show on Chat: |cffff0000Disabled")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00Show on private chat: |cffff0000Disabled")
 
     elseif msg == "reset" then
         interrupt_master_pc = defaultConfigs
@@ -474,8 +476,8 @@ local function handler(msg)
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn off show only team type /intm team off")
 
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To check show on chat status type /intm chat")
-        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn on show on chat type /intm chat on")
-        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn off show on chat type /intm chat off")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn on show on private chat type /intm chat on")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn off show on private chat type /intm chat off")
 
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To check announce on /instance chat status type /intm instance")
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn on announce on /instance chat type /intm instance on")
