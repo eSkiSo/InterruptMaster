@@ -26,7 +26,7 @@ local spellData = {
     [116705]    = 15,   --Spear hand strike
     [97547]     = 60,   --Solar Beam
     [78675]     = 60,   --extra solar
-    [31935]     = 15,   --Avenger's Shield
+    --[31935]     = 15,   --Avenger's Shield
     [183752]    = 15,   --Disrupt (DH)
     [15487]     = 45,   -- Priest Silence
     --[129597]  = 90,   -- Belf Silence
@@ -34,11 +34,15 @@ local spellData = {
     [187707]    = 15,   --Muzzle - Thanks sluth!
     [351338]    = 40,   --Quell - Drakthir
     [88625]     = 60,   --Chastise - Priest
-    [115750]     = 90,  --Blinding Light - Palading
-    [119914]     = 30,  --Axe Toss Warlock pet
-    [368970]     = 90,  --Tail Swipe Evoker
+    [115750]    = 90,  --Blinding Light - Palading
+    [119914]    = 30,  --Axe Toss Warlock pet
+    [368970]    = 90,  --Tail Swipe Evoker
     --[139]     = 60,   --TEST
     --[527]     = 10,   --TEST
+}
+
+local modifyingTalents = {
+    [15487] = {id=23137,cdr=15}, -- Last Word
 }
 
 local defaultConfigs = {
@@ -55,6 +59,8 @@ local defaultConfigs = {
         barHeight = 25,
         teamOnly = false,
         onChat = true,
+        onInstanceChat = false,
+        onParty = false
     }
 }
 
@@ -64,6 +70,7 @@ local function barSorter(a, b)
   return a:Get("im:end") > b:Get("im:end") and true or false
 end
 
+-- show mover bar to define where bars should appear
 function f:showMover()
     local f = CreateFrame("Frame",nil,UIParent)
     f:SetFrameStrata("BACKGROUND")
@@ -98,11 +105,62 @@ function f:showMover()
     f:Show()
 end
 
+-- not implemented yet
+function f:trackTalent(event)
+    if event == "INSPECT_READY" then
+        local unitGuid= nil --select(1,...)
+        for i,s in ipairs(activeCooldowns) do
+            if s:Get("im:sourceGUID") == unitGuid then
+                local modifyingTalent = modifyingTalents[s:Get("im:spellID")]
+                if modifyingTalent then
+                    local refStr = nil
+                    if UnitGUID("player") == s:Get("im:sourceGUID") then
+                        refStr = "player"
+                    else
+                        for i=1,GetNumGroupMembers()-1 do 
+                            if UnitGUID("party"..i)== s:Get("im:sourceGUID") then 
+                                refStr="party"..i
+                            end
+                        end
+                    end
+                    if refStr ~= nil then
+                        local talentId,selected
+                        for t=1,7 do
+                            for c=1,3 do
+                                talentId,_,_,selected = GetTalentInfo(t,c,GetActiveSpecGroup(true),true, refStr)
+                                if talentId == modifyingTalent.id then
+                                    if selected then
+                                        if not s.trackedTalents then
+                                            s.trackedTalents={}
+                                        end
+                                        if not s.trackedTalents[talentId] then
+                                            s.trackedTalents[talentId]=true
+                                            s.cooldown=s.cooldown-modifyingTalent.cdr
+                                            s.duration=s.cooldown
+                                            s.expirationTime=s.expirationTime-modifyingTalent.cdr
+                                            s.index=s.duration
+                                            s.changed=true
+                                            return true
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+--f:RegisterEvent("SPELL_INTERRUPT")
+--f:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+--f:RegisterEvent("SPELL_CAST_SUCCESS")
 
---  3.3. Tell the frame what to do when the event happens:
-f:SetScript("OnEvent", function(self, event, arg1)
+--  On event handler
+f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
 
     if event == "ADDON_LOADED" then
         if arg1 == "InterruptMaster" then
@@ -112,7 +170,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
                 f:showMover()
             else 
                 if interrupt_master_pc.db.resetPos == nil or interrupt_master_pc.db.resetPos == true then
-                    print("SHOW MOVER FRAME")
+                    --print("SHOW MOVER FRAME")
                     f:showMover()
                 end
             end
@@ -120,33 +178,52 @@ f:SetScript("OnEvent", function(self, event, arg1)
         return
     end
 
+    if event == "UNIT_SPELLCAST_INTERRUPTED" then
+        --unitTarget = arg1
+        --castGUID = arg2
+        --spellID = arg3
+        name, _ = UnitName(arg1)
+        link,  _ = GetSpellLink(arg3)
+        --print("Stopped", link, "from", name)
+
+    end
+    
     --  Check the combat event:
     local timestamp, combatEvent, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellID, spellName, spellSchool, extraSpellID, extraSpellName = CombatLogGetCurrentEventInfo()
+    
 
     if combatEvent ~= "SPELL_INTERRUPT" and combatEvent ~= "SPELL_CAST_SUCCESS"  then
+        --print("Ignored event: ", combatEvent)
         -- We don't care about this combat event.
         return
+    end
+
+    if interrupt_master_pc.db.teamOnly and not( UnitInParty(sourceName) or UnitInRaid(sourceName)) and sourceName ~= playerName then 
+        -- is from someone outside group and user defined only team
+        return 
     end
 
     local successful = 'no'
     if combatEvent == "SPELL_INTERRUPT" then 
         successful = 'yes'
-        --print(sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellID, spellName, spellSchool, extraSpellID, extraSpellName)
         if interrupt_master_pc.db.onChat then
-            print("Interrupted ",extraSpellName, " with success!")
+            local link,  _ = GetSpellLink(extraSpellID)
+            print("Interrupted",link, "successfully!")
+        end
+        if interrupt_master_pc.db.onInstanceChat then
+            inInstance, _ = IsInInstance()
+            if inInstance then
+                SendChatMessage("Interrupted " .. GetSpellLink(extraSpellID) .. " successfully!", "INSTANCE_CHAT", DEFAULT_CHAT_FRAME.editBox.languageID);
+            end
+        end
+        if interrupt_master_pc.db.onParty then
+            SendChatMessage("Interrupted " .. GetSpellLink(extraSpellID) .. " successfully!", "PARTY", DEFAULT_CHAT_FRAME.editBox.languageID);
         end
     end
 
-    if interrupt_master_pc.db.teamOnly and not( UnitInParty(sourceName) or UnitInRaid(sourceName)) and sourceName ~= playerName then 
-        --print("Outsider interrupt")
-        return 
-    end
-
     --  3.3.2. Check the spell:
-    --print("Check SpellID ", spellID)
     local spell = spellData[spellID]
-    if not spell then
-        --print("Not found")
+    if not spell and successful == 'no' then
         --print(combatEvent, spellID, extraSpellName)
         -- We don't care about this spell.
         return
@@ -154,11 +231,17 @@ f:SetScript("OnEvent", function(self, event, arg1)
 
     local timeout = 5
     if spellData[spellID] then
-        timeout = spellData[spellID] --+ (timestamp - GetTime())
+        timeout = spellData[spellID]
+    else
+        local cd = GetSpellBaseCooldown(spellID)
+        if cd > 0 then
+            timeout = cd / 1000
+        end
     end
 
-    x = self:createBar(sourceName, spellID, timeout, timestamp, successful)
+    x = self:createBar(sourceName, spellID, timeout, timestamp, successful, sourceGUID)
     if (x == false or x == nil) and lastBarCreate ~= nil then
+        -- interrupt was successful, sometimes the spell repeats with both events
         lastBarCreate:SetLabel(sourceName .. " [!]")
     elseif x ~= false and x ~= nil then
         if x:Get("im:spellID") == spellID then
@@ -173,9 +256,6 @@ local lastBarCreate = nil
 local doingRearrange = false
 
 function f:rearrangeActiveCoolDowns(stoppedBar)
-    --local barName = stoppedBar:Get("im:name")
-    --activeCooldowns[barName] = nil
-    --print("Called by ", barName)
     if doingRearrange then
         return
     end
@@ -195,14 +275,11 @@ function f:rearrangeActiveCoolDowns(stoppedBar)
     lastBarCreate = nil
     for _, bar in next, tmp do 
         if bar ~= nil then
-            --print(bar:Get("im:name"))
             bar:ClearAllPoints()
             bar:Hide()
             if prevbar then
-                --print("Existted")
                 bar:SetPoint("TOP", prevbar, "BOTTOM", 0, 0)
             else
-                --print("Did not exits")
                 bar:SetPoint(interrupt_master_pc.db.pos, interrupt_master_pc.db.posx, interrupt_master_pc.db.posy)
             end
             prevbar = bar
@@ -215,7 +292,7 @@ function f:rearrangeActiveCoolDowns(stoppedBar)
 end
 
 local isCreatingBar = false
-function f:createBar(sourceName, spellID, timeout, start, successful) 
+function f:createBar(sourceName, spellID, timeout, start, successful, sourceGUID) 
 
     if isCreatingBar then
         return false
@@ -276,6 +353,7 @@ function f:createBar(sourceName, spellID, timeout, start, successful)
     mybar:SetScript("OnMouseDown", function(self, event) f.clearBar(definedBarName) end)
     
     mybar:Set("im:spellID", spellID)
+    mybar:Set("im:sourceGUID", sourceGUID)
     mybar:Set("im:name", definedBarName)
     mybar:Set("im:start", start)
     mybar:Set("im:end", GetTime() + timeout)
@@ -324,37 +402,63 @@ local function handler(msg)
     if msg == "move" then
         print("|cFFFFFF00Interrupt Master: |cFF00FF00Open Mover")
         f:showMover()
-    elseif msg == "cooldown" then
-
-    elseif msg == "skip" then
-        f:getQuestStatus()
     elseif msg == "team" then
         if interrupt_master_pc.db.teamOnly then
             print("|cFFFFFF00Interrupt Master: Team only: |cFF00FF00is active")
         else
             print("|cFFFFFF00Interrupt Master: Team only: |cffff0000is disabled")
         end
-    elseif msg == "chat" then
-        if interrupt_master_pc.db.onChat then
-            print("|cFFFFFF00Interrupt Master: Show On Chat: |cFF00FF00is active")
-        else
-            print("|cFFFFFF00Interrupt Master: Show On Chat: |cffff0000is disabled")
-        end
+
     elseif msg == "team on" then
         interrupt_master_pc.db.teamOnly = true
         print("|cFFFFFF00Interrupt Master: |cFF00FF00Team only: |cFF00FF00Enabled")
     elseif msg == "team off" then
         interrupt_master_pc.db.teamOnly = false
         print("|cFFFFFF00Interrupt Master: |cFF00FF00Team only: |cffff0000Disabled")
+
+    elseif msg == "party" then
+        if interrupt_master_pc.db.onChat then
+            print("|cFFFFFF00Interrupt Master: Announce On /party Chat: |cFF00FF00is active")
+        else
+            print("|cFFFFFF00Interrupt Master: Announce On /party Chat: |cffff0000is disabled")
+        end
+    elseif msg == "party on" then
+        interrupt_master_pc.db.onParty = true
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00Announce on /party chat: |cFF00FF00Enabled")
+    elseif msg == "party off" then
+        interrupt_master_pc.db.onParty = false
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00Announce on /party chat: |cffff0000Disabled")
+
+    elseif msg == "instance" then
+        if interrupt_master_pc.db.onChat then
+            print("|cFFFFFF00Interrupt Master: Announce On /instance Chat: |cFF00FF00is active")
+        else
+            print("|cFFFFFF00Interrupt Master: Announce On /instance Chat: |cffff0000is disabled")
+        end
+    elseif msg == "instance on" then
+        interrupt_master_pc.db.onInstanceChat = true
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00Announce on /instance chat: |cFF00FF00Enabled")
+    elseif msg == "instance off" then
+        interrupt_master_pc.db.onInstanceChat = false
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00Announce on /instance chat: |cffff0000Disabled")
+
+    elseif msg == "chat" then
+        if interrupt_master_pc.db.onChat then
+            print("|cFFFFFF00Interrupt Master: Show On Chat: |cFF00FF00is active")
+        else
+            print("|cFFFFFF00Interrupt Master: Show On Chat: |cffff0000is disabled")
+        end
     elseif msg == "chat on" then
         interrupt_master_pc.db.onChat = true
         print("|cFFFFFF00Interrupt Master: |cFF00FF00Show on Chat: |cFF00FF00Enabled")
     elseif msg == "chat off" then
         interrupt_master_pc.db.onChat = false
         print("|cFFFFFF00Interrupt Master: |cFF00FF00Show on Chat: |cffff0000Disabled")
+
     elseif msg == "reset" then
         interrupt_master_pc = defaultConfigs
         print("|cFFFFFF00Interrupt Master: |cFF00FF00Player profile reset")
+
     elseif type(tonumber(msg)) == "number" then
         local spellName, _, _, _, _, _, spellID = GetSpellInfo(msg)
         local cd = GetSpellBaseCooldown(msg)
@@ -364,12 +468,22 @@ local function handler(msg)
         print("Spell ", spellName, " has a cooldown of ",cd, " seconds")
     else
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To move IM type /intm move")
+
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To check show only team status type /intm team")
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn on show only team type /intm team on")
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn off show only team type /intm team off")
+
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To check show on chat status type /intm chat")
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn on show on chat type /intm chat on")
         print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn off show on chat type /intm chat off")
+
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To check announce on /instance chat status type /intm instance")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn on announce on /instance chat type /intm instance on")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn off announce on /instance chat type /intm instance off")
+
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To check announce on /party chat status type /intm party")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn on announce on /party chat type /intm party on")
+        print("|cFFFFFF00Interrupt Master: |cFF00FF00To turn off announce on /party chat type /intm party off")
     end
 end
 

@@ -1,5 +1,5 @@
 ## Title: Interrupt Master
-## Version: 1.0
+## Version: 1.2
 ## Author: Eskiso
 ## Interface: 100002
 ## Notes: Keep track of interrupts
